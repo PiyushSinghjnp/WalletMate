@@ -48,14 +48,14 @@ export async function p2pTransfer(to: string, amount: number) {
         await tx.$queryRaw`SELECT * FROM "Balance" WHERE "userId"=${Number(from)} FOR UPDATE`; 
         // first we check if the user has enough balance
         const fromBalance = await tx.balance.findUnique({
-            where: { userId: (from) },
+            where: { userId: Number(from) },
           });
           if (!fromBalance || fromBalance.amount < amount) {
             throw new Error('Insufficient funds');
           }
 
           await tx.balance.update({
-            where: { userId: (from) },
+            where: { userId: Number(from) },
             data: { amount: { decrement: amount } },
           });
 
@@ -66,8 +66,8 @@ export async function p2pTransfer(to: string, amount: number) {
           // then we create the p2p transaction in the database
           await tx.p2pTransfer.create({
             data:{
-                fromUserId:(from),
-                toUserId:toUser.id,
+                fromUserId: Number(from),
+                toUserId: toUser.id,
                 amount,
                 timestamp: new Date()
             }
