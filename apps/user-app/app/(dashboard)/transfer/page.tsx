@@ -5,14 +5,21 @@ import { OnRampTransactions } from "../../../components/OnRampTransactions";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../lib/auth";
 import { ArrowRight, Wallet, History, TrendingUp } from "lucide-react";
+import { redirect } from "next/navigation";
 
 async function getBalance() {
     const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+        redirect("/api/auth/signin");
+    }
+
     const balance = await prisma.balance.findFirst({
         where: {
-            userId: Number(session?.user?.id)
+            userId: Number(session.user.id)
         }
     });
+
     return {
         amount: balance?.amount || 0,
         locked: balance?.locked || 0
@@ -21,17 +28,23 @@ async function getBalance() {
 
 export async function getOnRampTransactions() {
     const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+        return [];
+    }
+
     const txns = await prisma.onRampTransaction.findMany({
         where: {
-            userId: Number(session?.user?.id)
+            userId: Number(session.user.id)
         }
     });
+    
     return txns.map(t => ({
         time: t.startTime,
         amount: t.amount,
         status: t.status,
         provider: t.provider
-    }))
+    }));
 }
 
 export default async function() {

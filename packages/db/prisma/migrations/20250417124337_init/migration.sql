@@ -1,8 +1,11 @@
 -- CreateEnum
-CREATE TYPE "AuthType" AS ENUM ('Google', 'Github');
+CREATE TYPE "OnRampStatus" AS ENUM ('Success', 'Failure', 'Processing');
 
 -- CreateEnum
-CREATE TYPE "OnRampStatus" AS ENUM ('Success', 'Failure', 'Processing');
+CREATE TYPE "TransactionType" AS ENUM ('CREDIT', 'DEBIT');
+
+-- CreateEnum
+CREATE TYPE "TransactionStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
 
 -- CreateTable
 CREATE TABLE "User" (
@@ -20,9 +23,38 @@ CREATE TABLE "Merchant" (
     "id" SERIAL NOT NULL,
     "email" TEXT NOT NULL,
     "name" TEXT,
-    "auth_type" "AuthType" NOT NULL,
+    "password" TEXT NOT NULL,
+    "auth_type" TEXT NOT NULL DEFAULT 'CREDENTIALS',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Merchant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MerchantBalance" (
+    "id" SERIAL NOT NULL,
+    "amount" INTEGER NOT NULL DEFAULT 0,
+    "merchantId" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MerchantBalance_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MerchantTransaction" (
+    "id" SERIAL NOT NULL,
+    "amount" INTEGER NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'CREDIT',
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "description" TEXT,
+    "paymentId" TEXT,
+    "merchantId" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MerchantTransaction_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -69,10 +101,22 @@ CREATE UNIQUE INDEX "User_number_key" ON "User"("number");
 CREATE UNIQUE INDEX "Merchant_email_key" ON "Merchant"("email");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "MerchantBalance_merchantId_key" ON "MerchantBalance"("merchantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MerchantTransaction_paymentId_key" ON "MerchantTransaction"("paymentId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "OnRampTransaction_token_key" ON "OnRampTransaction"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Balance_userId_key" ON "Balance"("userId");
+
+-- AddForeignKey
+ALTER TABLE "MerchantBalance" ADD CONSTRAINT "MerchantBalance_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MerchantTransaction" ADD CONSTRAINT "MerchantTransaction_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "p2pTransfer" ADD CONSTRAINT "p2pTransfer_fromUserId_fkey" FOREIGN KEY ("fromUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

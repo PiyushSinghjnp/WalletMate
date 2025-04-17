@@ -10,6 +10,8 @@ import { z } from "zod";
 import crypto from "crypto";
 
 const app = express();
+const PORT = process.env.PORT || 3005;
+
 app.use(express.json());
 
 // Webhook payload validation schema
@@ -128,7 +130,6 @@ app.post("/hdfcWebhook", async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => {
     console.log(`Bank webhook server running on port ${PORT}`);
 });
