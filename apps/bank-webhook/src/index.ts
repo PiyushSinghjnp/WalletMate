@@ -6,69 +6,130 @@
 import express from "express";
 import db from "@repo/db/client";
 import prisma from "@repo/db/client";
-const app = express();
+import { z } from "zod";
+import crypto from "crypto";
 
-app.use(express.json())
+const app = express();
+const PORT = process.env.PORT || 3005;
+
+app.use(express.json());
+
+// Webhook payload validation schema
+const webhookPayloadSchema = z.object({
+    token: z.string(),
+    user_identifier: z.string(),
+    amount: z.string(),
+    status: z.enum(["Processing", "Success", "Failed"]),
+    signature: z.string(), // HDFC Bank's signature
+    timestamp: z.string()
+});
+
+type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
+
+// Verify HDFC Bank's signature
+function verifySignature(payload: WebhookPayload, signature: string, timestamp: string): boolean {
+    const secret = process.env.HDFC_WEBHOOK_SECRET;
+    if (!secret) {
+        throw new Error("HDFC_WEBHOOK_SECRET not configured");
+    }
+
+    const data = `${payload.token}${payload.user_identifier}${payload.amount}${timestamp}`;
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(data)
+        .digest('hex');
+
+    return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+    );
+}
 
 app.post("/hdfcWebhook", async (req, res) => {
-    //TODO: Add zod validation here?
-    //TODO: HDFC bank should ideally send us a secret so we know this is sent by them
-    // TODO: Add check only if the payment is processing  then proceed further because processing will become success when the amount will get added . Success status ones will be already incresed so we check for processing ones
-  
-
-    const paymentInformation: {
-        token: string;
-        userId: string;
-        amount: string
-    } = {
-        token: req.body.token,
-        userId: req.body.user_identifier,
-        amount: req.body.amount
-    };
-    const getRecord = await prisma.onRampTransaction.findUnique({
-        where:{
-            token : paymentInformation.token
-        }
-    }) 
-    if(getRecord?.status =="Success"){
-        return res.status(409).json({
-            message:"Transaction Already processed"
-        })
-    }
-    // if the money from the bank have send and the money we have requested to add is not same then we can return amount mismatch error
     try {
+        // Validate webhook payload
+        const validatedData = webhookPayloadSchema.parse(req.body);
+
+        // Verify signature
+        if (!verifySignature(validatedData, validatedData.signature, validatedData.timestamp)) {
+            return res.status(401).json({
+                message: "Invalid signature"
+            });
+        }
+
+        // Get the original transaction record
+        const getRecord = await prisma.onRampTransaction.findUnique({
+            where: {
+                token: validatedData.token
+            }
+        });
+
+        if (!getRecord) {
+            return res.status(404).json({
+                message: "Transaction not found"
+            });
+        }
+
+        // Check if transaction was already processed
+        if (getRecord.status === "Success") {
+            return res.status(409).json({
+                message: "Transaction already processed"
+            });
+        }
+
+        // Verify amount matches
+        if (Number(validatedData.amount) !== getRecord.amount) {
+            return res.status(400).json({
+                message: "Amount mismatch"
+            });
+        }
+
+        // Only process if status is "Processing"
+        if (validatedData.status !== "Processing") {
+            return res.status(400).json({
+                message: "Invalid transaction status"
+            });
+        }
+
+        // Process the transaction
         await db.$transaction([
             db.balance.updateMany({
                 where: {
-                    userId: Number(paymentInformation.userId)
+                    userId: Number(validatedData.user_identifier)
                 },
                 data: {
                     amount: {
-                        // You can also get this from your DB
-                        increment: Number(paymentInformation.amount)
+                        increment: Number(validatedData.amount)
                     }
                 }
             }),
             db.onRampTransaction.updateMany({
                 where: {
-                    token: paymentInformation.token
-                }, 
+                    token: validatedData.token
+                },
                 data: {
-                    status: "Success",
+                    status: "Success"
                 }
             })
         ]);
 
         res.json({
-            message: "Captured"
-        })
-    } catch(e) {
-        console.error(e);
-        res.status(411).json({
-            message: "Error while processing webhook"
-        })
+            message: "Payment processed successfully"
+        });
+    } catch (error: unknown) {
+        console.error("Webhook error:", error);
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                message: "Invalid webhook payload",
+                errors: error.errors
+            });
+        }
+        res.status(500).json({
+            message: "Error processing webhook"
+        });
     }
+});
 
-})
-
-app.listen(3003);
+app.listen(PORT, () => {
+    console.log(`Bank webhook server running on port ${PORT}`);
+});
